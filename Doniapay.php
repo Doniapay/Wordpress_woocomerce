@@ -1,5 +1,8 @@
 <?php
 
+/*
+ * This action hook registers our PHP class as a WooCommerce payment gateway
+ */
 add_action('plugins_loaded', 'doniapay_init_gateway_class');
 
 function doniapay_init_gateway_class()
@@ -13,8 +16,8 @@ function doniapay_init_gateway_class()
             $this->id = 'doniapay';
             $this->icon = 'https://doniapay.com/public/assets/img/logo.png';
             $this->has_fields = false;
-            $this->method_title = __('Doniapay', 'doniapay');
-            $this->method_description = __('Pay With Doniapay', 'doniapay');
+            $this->method_title = __('doniapay', 'doniapay');
+            $this->method_description = __('Pay With doniapay', 'doniapay');
 
             $this->supports = array('products');
 
@@ -34,7 +37,7 @@ function doniapay_init_gateway_class()
     $this->form_fields = array(
         'enabled' => array(
             'title'       => 'Enable/Disable',
-            'label'       => 'Enable Doniapay',
+            'label'       => 'Enable doniapay',
             'type'        => 'checkbox',
             'description' => '',
             'default'     => 'no'
@@ -43,7 +46,7 @@ function doniapay_init_gateway_class()
             'title'       => 'Title',
             'type'        => 'text',
             'description' => 'This controls the title which the user sees during checkout.',
-            'default'     => 'Doniapay Gateway',
+            'default'     => 'doniapay Gateway',
             'desc_tip'    => true,
         ),
         'apikeys' => array(
@@ -100,7 +103,7 @@ function doniapay_init_gateway_class()
             }
 
             if ($order->get_status() != 'completed') {
-                $order->update_status('pending', __('Customer is being redirected to Doniapay', 'doniapay'));
+                $order->update_status('pending', __('Customer is being redirected to doniapay', 'doniapay'));
             }
 
             $data = array(
@@ -181,7 +184,7 @@ function doniapay_init_gateway_class()
                     if ($this->get_option('is_digital') === 'yes') {
                         $order->update_status('completed', __("doniapay payment was successfully completed. Payment Method: {$payment_method}, Amount: {$amount}, Transaction ID: {$transaction_id}, Sender Number: {$sender_number}", 'doniapay'));
                         $order->reduce_order_stock();
-                        $order->add_order_note(__('Payment completed via PGW URL checkout. trx id: ' . $transaction_id, 'nagorikpay'));
+                        $order->add_order_note(__('Payment completed via PGW URL checkout. trx id: ' . $transaction_id, 'doniapay'));
                         $order->payment_complete();
                     } else {
                         $order->update_status('processing', __("doniapay payment was successfully processed. Payment Method: {$payment_method}, Amount: {$amount}, Transaction ID: {$transaction_id}, Sender Number: {$sender_number}", 'doniapay'));
