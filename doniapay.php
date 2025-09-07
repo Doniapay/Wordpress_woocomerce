@@ -74,7 +74,7 @@ function doniapay_init_gateway_class()
             'title'             => 'Payment Site URL',
             'type'              => 'text',
             'description'       => '',
-            'default'           => 'https://secure.doniapay.com/',
+            'default'           => 'https://payment.doniapay.com/',
             'desc_tip'          => true,
             'custom_attributes' => array(
                 'readonly' => 'readonly'
@@ -260,3 +260,4 @@ add_action('rest_api_init', function () {
         'callback' => 'doniapay_handle_webhook',
     ));
 });
+
