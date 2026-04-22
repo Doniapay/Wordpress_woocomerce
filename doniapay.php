@@ -1,4 +1,16 @@
 <?php
+/*
+ * Plugin Name: Doniapay 
+ * Description: This plugin allows your customers to pay with Bkash, Nagad, Rocket, and all BD gateways via doniapay.
+ * Author: DabdCoder
+ * Author URI: https://github.com/Doniapay
+ * Version: 1.0.0
+ * Requires at least: 5.2
+ * Requires PHP: 7.2
+ * License: GPL v2 or later
+ * License URI: 
+ * Text Domain: doniapay
+ */
 
 /*
  * This action hook registers our PHP class as a WooCommerce payment gateway
@@ -14,7 +26,7 @@ function doniapay_init_gateway_class()
         public function __construct()
         {
             $this->id = 'doniapay';
-            $this->icon = 'https://doniapay.com/public/assets/img/logo.png';
+            $this->icon = 'https://doniapay.com/public/uploads/user/6d93f2a0e5f0fe2cc3a6e9e3ade964b43b07f897/1748836843_e6eb753f29e09bb26089.png';
             $this->has_fields = false;
             $this->method_title = __('doniapay', 'doniapay');
             $this->method_description = __('Pay With doniapay', 'doniapay');
@@ -74,7 +86,7 @@ function doniapay_init_gateway_class()
             'title'             => 'Payment Site URL',
             'type'              => 'text',
             'description'       => '',
-            'default'           => 'https://payment.doniapay.com/',
+            'default'           => 'https://api.doniapay.com/',
             'desc_tip'          => true,
             'custom_attributes' => array(
                 'readonly' => 'readonly'
@@ -214,7 +226,7 @@ function doniapay_init_gateway_class()
         }
     }
 
-    function doniapay_add_gateway_class($gateways)
+    function doniapayadd_gateway_class($gateways)
     {
         $gateways[] = 'WC_doniapay_Gateway';
         return $gateways;
@@ -260,4 +272,3 @@ add_action('rest_api_init', function () {
         'callback' => 'doniapay_handle_webhook',
     ));
 });
-
