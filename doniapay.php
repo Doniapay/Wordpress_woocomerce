@@ -8,13 +8,9 @@
  * Requires at least: 5.2
  * Requires PHP: 7.2
  * License: GPL v2 or later
- * License URI: 
  * Text Domain: doniapay
  */
 
-/*
- * This action hook registers our PHP class as a WooCommerce payment gateway
- */
 add_action('plugins_loaded', 'doniapay_init_gateway_class');
 
 function doniapay_init_gateway_class()
@@ -41,60 +37,49 @@ function doniapay_init_gateway_class()
             $this->enabled = $this->get_option('enabled');
 
             add_action('woocommerce_update_options_payment_gateways_' . $this->id, array($this, 'process_admin_options'));
-            add_action('woocommerce_api_' . strtolower(get_class($this)), array($this, 'handle_webhook'));
+            add_action('woocommerce_api_wc_doniapay_gateway', array($this, 'handle_webhook'));
         }
 
         public function init_form_fields()
-{
-    $this->form_fields = array(
-        'enabled' => array(
-            'title'       => 'Enable/Disable',
-            'label'       => 'Enable doniapay',
-            'type'        => 'checkbox',
-            'description' => '',
-            'default'     => 'no'
-        ),
-        'title' => array(
-            'title'       => 'Title',
-            'type'        => 'text',
-            'description' => 'This controls the title which the user sees during checkout.',
-            'default'     => 'doniapay Gateway',
-            'desc_tip'    => true,
-        ),
-        'apikeys' => array(
-            'title'       => 'Enter API Key',
-            'type'        => 'text',
-            'description' => '',
-            'default'     => '###################',
-            'desc_tip'    => true,
-        ),
-        'currency_rate' => array(
-            'title'       => 'Enter USD Rate',
-            'type'        => 'number',
-            'description' => '',
-            'default'     => '110',
-            'desc_tip'    => true,
-        ),
-        'is_digital' => array(
-            'title'       => 'Enable/Disable Digital product',
-            'label'       => 'Enable Digital product',
-            'type'        => 'checkbox',
-            'description' => '',
-            'default'     => 'no'
-        ),
-        'payment_site' => array(
-            'title'             => 'Payment Site URL',
-            'type'              => 'text',
-            'description'       => '',
-            'default'           => 'https://api.doniapay.com/',
-            'desc_tip'          => true,
-            'custom_attributes' => array(
-                'readonly' => 'readonly'
-            ),
-        ),
-    );
-}
-
+        {
+            $this->form_fields = array(
+                'enabled' => array(
+                    'title'       => 'Enable/Disable',
+                    'label'       => 'Enable doniapay',
+                    'type'        => 'checkbox',
+                    'default'     => 'no'
+                ),
+                'title' => array(
+                    'title'       => 'Title',
+                    'type'        => 'text',
+                    'default'     => 'doniapay Gateway',
+                ),
+                'apikeys' => array(
+                    'title'       => 'Enter API Key',
+                    'type'        => 'text',
+                    'default'     => '',
+                ),
+                'currency_rate' => array(
+                    'title'       => 'Enter USD Rate',
+                    'type'        => 'number',
+                    'default'     => '110',
+                ),
+                'is_digital' => array(
+                    'title'       => 'Enable/Disable Digital product',
+                    'label'       => 'Enable Digital product',
+                    'type'        => 'checkbox',
+                    'default'     => 'no'
+                ),
+                'payment_site' => array(
+                    'title'             => 'Payment Site URL',
+                    'type'              => 'text',
+                    'default'           => 'https://api.doniapay.com/order/synchronize',
+                    'custom_attributes' => array(
+                        'readonly' => 'readonly'
+                    ),
+                ),
+            );
+        }
 
         public function process_payment($order_id)
         {
@@ -102,13 +87,7 @@ function doniapay_init_gateway_class()
             $order = wc_get_order($order_id);
             $current_user = wp_get_current_user();
 
-            $subtotal = WC()->cart->subtotal;
-            $shipping_total = WC()->cart->get_shipping_total();
-            $fees = WC()->cart->get_fee_total();
-            $discount_excl_tax_total = WC()->cart->get_cart_discount_total();
-            $discount_tax_total = WC()->cart->get_cart_discount_tax_total();
-            $discount_total = $discount_excl_tax_total + $discount_tax_total;
-            $total = $subtotal + $shipping_total + $fees - $discount_total;
+            $total = $order->get_total();
 
             if ($order->get_currency() == 'USD') {
                 $total = $total * $this->get_option('currency_rate');
@@ -118,52 +97,67 @@ function doniapay_init_gateway_class()
                 $order->update_status('pending', __('Customer is being redirected to doniapay', 'doniapay'));
             }
 
-            $data = array(
-                "cus_name"    => $current_user->user_firstname,
-                "cus_email"   => $current_user->user_email,
-                "amount"      => $total,
-                "webhook_url" => site_url('/?wc-api=wc_doniapay_gateway&order_id=' . $order->get_id()),
-                "success_url" => $this->get_return_url($order),
-                "cancel_url"  => wc_get_checkout_url()
+            $raw_data = array(
+                "dn_su"      => add_query_arg(array('wc-api' => 'WC_doniapay_Gateway', 'order_id' => $order_id, 'type' => 'success'), home_url('/')),
+                "dn_cu"      => $order->get_cancel_order_url(),
+                "dn_wu"      => add_query_arg(array('wc-api' => 'WC_doniapay_Gateway', 'order_id' => $order_id, 'type' => 'webhook'), home_url('/')),
+                "dn_am"      => round($total, 2),
+                "dn_cn"      => $order->get_billing_first_name(),
+                "dn_ce"      => $order->get_billing_email(),
+                "dn_mt"      => json_encode(array("order_id" => $order_id)),
+                "dn_rt"      => "GET"
             );
+
+            $payload = base64_encode(json_encode($raw_data));
+            $api_key = $this->get_option('apikeys');
+            $signature = hash_hmac('sha256', $payload, $api_key);
 
             $header = array(
-                "api" => $this->get_option('apikeys'),
-                "url" => $this->get_option('payment_site') . "api/payment/create"
+                "api"       => $api_key,
+                "signature" => $signature,
+                "url"       => $this->get_option('payment_site') . "/prepare"
             );
 
-            $response = $this->create_payment($data, $header);
-
+            $response = $this->create_payment(array('dp_payload' => $payload), $header);
             $data = json_decode($response, true);
 
-            return array(
-                'result'   => 'success',
-                'redirect' => $data['payment_url']
-            );
+            if (isset($data['status']) && $data['status'] == 'success') {
+                return array(
+                    'result'   => 'success',
+                    'redirect' => $data['payment_url']
+                );
+            } else {
+                wc_add_notice(__('Initialization Error: ', 'doniapay') . $data['message'], 'error');
+                return;
+            }
         }
 
         public function create_payment($data = "", $header = '')
         {
             $headers = array(
                 'Content-Type: application/json',
-                'donia-apikey: ' . $header['api'],
+                'X-Signature-Key: ' . $header['api']
             );
+
+            if (isset($header['signature'])) {
+                $headers[] = 'donia-signature: ' . $header['signature'];
+            }
+
             $url = $header['url'];
             $curl = curl_init();
-            $data = json_encode($data);
+            $post_data = json_encode($data);
 
             curl_setopt_array($curl, array(
                 CURLOPT_URL => $url,
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_ENCODING => '',
                 CURLOPT_MAXREDIRS => 10,
-                CURLOPT_TIMEOUT => 0,
+                CURLOPT_TIMEOUT => 30,
                 CURLOPT_FOLLOWLOCATION => true,
                 CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
                 CURLOPT_CUSTOMREQUEST => 'POST',
-                CURLOPT_POSTFIELDS => $data,
+                CURLOPT_POSTFIELDS => $post_data,
                 CURLOPT_HTTPHEADER => $headers,
-                CURLOPT_VERBOSE => true
             ));
             curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
 
@@ -174,101 +168,118 @@ function doniapay_init_gateway_class()
 
         public function update_order_status($order)
         {
-            $transactionId = $_REQUEST['transactionId'];
+            $transactionId = isset($_REQUEST['ids']) ? sanitize_text_field($_REQUEST['ids']) : '';
+            
             $data = array(
                 "transaction_id" => $transactionId,
             );
+
             $header = array(
                 "api" => $this->get_option('apikeys'),
-                "url" => $this->get_option('payment_site') . "api/payment/verify"
+                "url" => $this->get_option('payment_site') . "/confirm"
             );
 
             $response = $this->create_payment($data, $header);
             $data = json_decode($response, true);
 
             if ($order->get_status() != 'completed') {
-                if ($data['status'] == "COMPLETED") {
-                    $transaction_id = $data['transaction_id'];
+                if (isset($data['status']) && $data['status'] == "Paid") {
+                    $transaction_id = $transactionId;
                     $amount = $data['amount'];
-                    $sender_number = $data['cus_email'];
-                    $payment_method = 'doniapay';
-
+                    
                     if ($this->get_option('is_digital') === 'yes') {
-                        $order->update_status('completed', __("doniapay payment was successfully completed. Payment Method: {$payment_method}, Amount: {$amount}, Transaction ID: {$transaction_id}, Sender Number: {$sender_number}", 'doniapay'));
-                        $order->reduce_order_stock();
-                        $order->add_order_note(__('Payment completed via PGW URL checkout. trx id: ' . $transaction_id, 'doniapay'));
-                        $order->payment_complete();
+                        $order->update_status('completed', sprintf(__('Doniapay payment successful. Amount: %s, Trx ID: %s', 'doniapay'), $amount, $transaction_id));
                     } else {
-                        $order->update_status('processing', __("doniapay payment was successfully processed. Payment Method: {$payment_method}, Amount: {$amount}, Transaction ID: {$transaction_id}, Sender Number: {$sender_number}", 'doniapay'));
-                        $order->reduce_order_stock();
-                        $order->payment_complete();
+                        $order->update_status('processing', sprintf(__('Doniapay payment successful. Amount: %s, Trx ID: %s', 'doniapay'), $amount, $transaction_id));
                     }
+                    $order->payment_complete($transaction_id);
+                    $order->reduce_order_stock();
                     return true;
                 } else {
-                    $order->update_status('on-hold', __('doniapay payment was successfully on-hold. Transaction id not found. Please check it manually.', 'doniapay'));
-                    return true;
+                    $order->update_status('on-hold', __('Awaiting Doniapay payment verification.', 'doniapay'));
+                    return false;
                 }
             }
         }
 
         public function handle_webhook()
         {
-            $order_id = $_GET['order_id'];
+            $order_id = isset($_GET['order_id']) ? sanitize_text_field($_GET['order_id']) : '';
             $order = wc_get_order($order_id);
 
             if ($order) {
                 $this->update_order_status($order);
             }
 
+            if (isset($_GET['type']) && $_GET['type'] == 'success') {
+                wp_redirect($this->get_return_url($order));
+                exit;
+            }
+
             status_header(200);
-            echo json_encode(['message' => 'Webhook received and processed.']);
+            echo json_encode(['message' => 'Processed']);
             exit();
         }
     }
 
-    function doniapayadd_gateway_class($gateways)
+    add_filter('woocommerce_payment_gateways', 'doniapay_add_gateway_class');
+    function doniapay_add_gateway_class($gateways)
     {
         $gateways[] = 'WC_doniapay_Gateway';
         return $gateways;
     }
-    add_filter('woocommerce_payment_gateways', 'doniapay_add_gateway_class');
 }
 
-function doniapay_handle_webhook()
+function doniapay_handle_rest_webhook($request)
 {
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        $transactionId = $_REQUEST['transactionId'];
-        $data = array(
-            "transaction_id" => $transactionId,
-        );
-        $header = array(
-            "api" => get_option('apikeys'),
-            "url" => get_option('payment_site') . "api/payment/verify"
-        );
+    $params = $request->get_params();
+    $transactionId = isset($params['transactionId']) ? sanitize_text_field($params['transactionId']) : '';
+    $order_id = isset($_GET['success1']) ? sanitize_text_field($_GET['success1']) : '';
 
-        $response = create_payment($data, $header);
-        $data = json_decode($response, true);
+    if (!$transactionId || !$order_id) {
+        return new WP_REST_Response(['message' => 'Missing Data'], 400);
+    }
 
-        if (isset($_GET['success1']) && $data['status'] == "COMPLETED") {
-            $order_id = $_GET['success1'];
-            $order = wc_get_order($order_id);
+    $api_key = get_option('woocommerce_doniapay_settings')['apikeys'];
+    $payment_site = get_option('woocommerce_doniapay_settings')['payment_site'];
 
-            if ($order) {
-                $order->update_status('completed', __('Payment confirmed via webhook.', 'doniapay'));
-                $order->reduce_order_stock();
-                $order->payment_complete();
-            }
+    $headers = array(
+        'Content-Type: application/json',
+        'X-Signature-Key: ' . $api_key
+    );
+
+    $post_data = json_encode(array("transaction_id" => $transactionId));
+    
+    $curl = curl_init();
+    curl_setopt_array($curl, array(
+        CURLOPT_URL => $payment_site . "/confirm",
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CUSTOMREQUEST => 'POST',
+        CURLOPT_POSTFIELDS => $post_data,
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_SSL_VERIFYPEER => false
+    ));
+
+    $response = curl_exec($curl);
+    curl_close($curl);
+    $data = json_decode($response, true);
+
+    if (isset($data['status']) && $data['status'] == "Paid") {
+        $order = wc_get_order($order_id);
+        if ($order && $order->get_status() != 'completed') {
+            $order->payment_complete($transactionId);
+            $order->reduce_order_stock();
+            $order->update_status('completed', __('Confirmed via REST Webhook', 'doniapay'));
         }
     }
 
-    status_header(200);
-    echo json_encode(['message' => 'Webhook received and processed.']);
-    exit();
+    return new WP_REST_Response(['message' => 'Webhook Processed'], 200);
 }
 
 add_action('rest_api_init', function () {
     register_rest_route('doniapay/v1', '/webhook', array(
         'methods' => 'POST',
-        'callback' => 'doniapay_handle_webhook',
+        'callback' => 'doniapay_handle_rest_webhook',
+        'permission_callback' => '__return_true'
     ));
 });
