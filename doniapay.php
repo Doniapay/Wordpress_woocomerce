@@ -85,7 +85,6 @@ function doniapay_init_gateway_class()
         {
             global $woocommerce;
             $order = wc_get_order($order_id);
-            $current_user = wp_get_current_user();
 
             $total = $order->get_total();
 
@@ -101,8 +100,8 @@ function doniapay_init_gateway_class()
                 "dn_su"      => add_query_arg(array('wc-api' => 'WC_doniapay_Gateway', 'order_id' => $order_id, 'type' => 'success'), home_url('/')),
                 "dn_cu"      => $order->get_cancel_order_url(),
                 "dn_wu"      => add_query_arg(array('wc-api' => 'WC_doniapay_Gateway', 'order_id' => $order_id, 'type' => 'webhook'), home_url('/')),
-                "dn_am"      => round($total, 2),
-                "dn_cn"      => $order->get_billing_first_name(),
+                "dn_am"      => (string)round($total, 2),
+                "dn_cn"      => $order->get_billing_first_name() . " " . $order->get_billing_last_name(),
                 "dn_ce"      => $order->get_billing_email(),
                 "dn_mt"      => json_encode(array("order_id" => $order_id)),
                 "dn_rt"      => "GET"
@@ -121,13 +120,13 @@ function doniapay_init_gateway_class()
             $response = $this->create_payment(array('dp_payload' => $payload), $header);
             $data = json_decode($response, true);
 
-            if (isset($data['status']) && $data['status'] == 'success') {
+            if (isset($data['status']) && in_array($data['status'], ['success', 1])) {
                 return array(
                     'result'   => 'success',
                     'redirect' => $data['payment_url']
                 );
             } else {
-                wc_add_notice(__('Initialization Error: ', 'doniapay') . $data['message'], 'error');
+                wc_add_notice(__('Initialization Error: ', 'doniapay') . ($data['message'] ?? 'Unknown error'), 'error');
                 return;
             }
         }
@@ -168,7 +167,7 @@ function doniapay_init_gateway_class()
 
         public function update_order_status($order)
         {
-            $transactionId = isset($_REQUEST['ids']) ? sanitize_text_field($_REQUEST['ids']) : '';
+            $transactionId = isset($_REQUEST['ids']) ? sanitize_text_field($_REQUEST['ids']) : (isset($_REQUEST['transactionId']) ? sanitize_text_field($_REQUEST['transactionId']) : '');
             
             $data = array(
                 "transaction_id" => $transactionId,
@@ -183,9 +182,9 @@ function doniapay_init_gateway_class()
             $data = json_decode($response, true);
 
             if ($order->get_status() != 'completed') {
-                if (isset($data['status']) && $data['status'] == "Paid") {
+                if (isset($data['status']) && in_array($data['status'], ['Paid', 'COMPLETED', 1, 'success'])) {
                     $transaction_id = $transactionId;
-                    $amount = $data['amount'];
+                    $amount = $data['amount'] ?? '';
                     
                     if ($this->get_option('is_digital') === 'yes') {
                         $order->update_status('completed', sprintf(__('Doniapay payment successful. Amount: %s, Trx ID: %s', 'doniapay'), $amount, $transaction_id));
@@ -233,8 +232,8 @@ function doniapay_init_gateway_class()
 function doniapay_handle_rest_webhook($request)
 {
     $params = $request->get_params();
-    $transactionId = isset($params['transactionId']) ? sanitize_text_field($params['transactionId']) : '';
-    $order_id = isset($_GET['success1']) ? sanitize_text_field($_GET['success1']) : '';
+    $transactionId = isset($params['transactionId']) ? sanitize_text_field($params['transactionId']) : (isset($params['ids']) ? sanitize_text_field($params['ids']) : '');
+    $order_id = isset($_GET['success1']) ? sanitize_text_field($_GET['success1']) : (isset($_GET['order_id']) ? sanitize_text_field($_GET['order_id']) : '');
 
     if (!$transactionId || !$order_id) {
         return new WP_REST_Response(['message' => 'Missing Data'], 400);
@@ -264,7 +263,7 @@ function doniapay_handle_rest_webhook($request)
     curl_close($curl);
     $data = json_decode($response, true);
 
-    if (isset($data['status']) && $data['status'] == "Paid") {
+    if (isset($data['status']) && in_array($data['status'], ['Paid', 'COMPLETED', 1, 'success'])) {
         $order = wc_get_order($order_id);
         if ($order && $order->get_status() != 'completed') {
             $order->payment_complete($transactionId);
