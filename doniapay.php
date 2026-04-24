@@ -73,7 +73,7 @@ function doniapay_init_gateway_class()
                 'payment_site' => array(
                     'title'             => 'Payment Site URL',
                     'type'              => 'text',
-                    'default'           => 'https://api.doniapay.com/order/synchronize',
+                    'default'           => 'https://api.doniapay.com/v2/order/synchronize',
                     'custom_attributes' => array(
                         'readonly' => 'readonly'
                     ),
